@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hệ thống thuyết minh đa ngôn ngữ</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--tx:#1b1f24;--mu:#667085;--bd:#e3e6ea;--ac:#2563eb;--acx:#fff;--dg:#dc2626}
+@media (prefers-color-scheme:dark){:root{--bg:#111418;--card:#1a1f26;--tx:#e8eaed;--mu:#9aa3af;--bd:#2c333d;--ac:#60a5fa;--acx:#0b1220}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 system-ui,"Segoe UI",sans-serif}
+.w{max-width:860px;margin:0 auto;padding:16px}h1{font-size:19px;margin:0}h2{font-size:16px;margin:0 0 8px}
+.c{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px;margin-bottom:10px}
+input,select,textarea,button{font:inherit;color:var(--tx);background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:8px 10px}
+input,select,textarea{width:100%}textarea{min-height:70px}button{cursor:pointer}button.p{background:var(--ac);color:var(--acx);border-color:var(--ac)}button.d{color:var(--dg)}
+.r{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.r>*{flex:1 1 140px}.r>button{flex:0 0 auto}
+.t{display:flex;gap:6px;margin:10px 0;flex-wrap:wrap}.t button.on{background:var(--ac);color:var(--acx);border-color:var(--ac)}
+.mu{color:var(--mu);font-size:13px}.b{font-size:12px;padding:1px 8px;border-radius:99px;border:1px solid var(--bd);color:var(--mu)}
+.it{cursor:pointer}.it:hover{border-color:var(--ac)}.er{color:var(--dg);min-height:20px;font-size:13px}
+table{width:100%;border-collapse:collapse}td,th{border-bottom:1px solid var(--bd);padding:6px;text-align:left;font-size:14px}.bd{white-space:pre-wrap;font-size:16px}
+</style></head><body><div class="w" id="app"></div>
+<script>
+var tok=null,me=null,langs=[],items=[],view='list',sub='content',lang='vi',q='',cur=null,adm=[],edit=null,users=[],err='',tmr;
+try{tok=localStorage.getItem('tm_tok')}catch(e){}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function $(i){return document.getElementById(i)}
+async function api(p,o){o=o||{};var h={'content-type':'application/json'};if(tok)h.authorization='Bearer '+tok;
+  var r=await fetch('/api/'+p,{method:o.method||'GET',headers:h,body:o.body?JSON.stringify(o.body):undefined});
+  var d=await r.json().catch(function(){return{}});if(!r.ok)throw new Error(d.error||'Lỗi '+r.status);return d}
+async function boot(){try{if(tok){me=await api('auth/me');await loadAll()}}catch(e){tok=null}render()}
+async function loadAll(){langs=await api('content/languages');await loadList()}
+async function loadList(){items=await api('content/contents?lang='+lang+'&q='+encodeURIComponent(q))}
+function fail(e){err=e.message;render()}
+/* FR-01 */
+async function auth(kind){var u=$('u').value.trim(),p=$('p').value;err='';
+  try{if(kind==='reg'){await api('auth/register',{method:'POST',body:{username:u,password:p}});err='Đăng ký thành công, hãy đăng nhập.';render();return}
+    var d=await api('auth/login',{method:'POST',body:{username:u,password:p}});tok=d.token;me=d.user;try{localStorage.setItem('tm_tok',tok)}catch(e){}await loadAll();render()}catch(e){fail(e)}}
+function logout(){tok=me=null;cur=null;try{localStorage.removeItem('tm_tok')}catch(e){}stop();render()}
+function render(){var h='';
+  if(!me){h='<div class="c" style="max-width:380px;margin:40px auto"><h1>🎧 Hệ thống thuyết minh</h1><p class="mu">Đăng nhập hoặc đăng ký tài khoản (mật khẩu ≥ 6 ký tự).</p><div style="display:grid;gap:8px"><input id="u" placeholder="Tên đăng nhập"><input id="p" type="password" placeholder="Mật khẩu"><div class="er">'+esc(err)+'</div><div class="r"><button class="p" onclick="auth(\'in\')">Đăng nhập</button><button onclick="auth(\'reg\')">Đăng ký</button></div></div></div>'}
+  else{h='<div class="r"><h1>🎧 Thuyết minh đa ngôn ngữ</h1><span class="b" style="flex:0 0 auto">'+esc(me.username)+' · '+me.role+'</span><button onclick="logout()">Đăng xuất</button></div><div class="t"><button class="'+(view==='list'?'on':'')+'" onclick="view=\'list\';render()">Nội dung</button>'+(me.role==='admin'?'<button class="'+(view==='admin'?'on':'')+'" onclick="goAdmin()">Quản trị</button>':'')+'</div><div class="er">'+esc(err)+'</div>'+(view==='list'?listV():admV())}
+  $('app').innerHTML=h;var qi=$('q');if(qi&&document.activeElement===document.body&&q){qi.focus();qi.setSelectionRange(q.length,q.length)}}
+/* FR-02..05 */
+function listV(){var h='<div class="c"><div class="r"><input id="q" placeholder="🔍 Tìm kiếm..." value="'+esc(q)+'" oninput="search(this.value)"><select onchange="chLang(this.value)">';
+  langs.forEach(function(l){h+='<option value="'+l.code+'"'+(l.code===lang?' selected':'')+'>'+esc(l.name)+'</option>'});h+='</select></div></div>';
+  if(cur)h+='<div class="c"><h2>'+esc(cur.title)+' <span class="b">'+esc(cur.lang)+'</span></h2>'+(cur.fallback?'<p class="mu">Chưa có bản dịch ở ngôn ngữ này, đang hiển thị tiếng Việt.</p>':'')+'<div class="bd">'+esc(cur.body)+'</div><div class="r" style="margin-top:10px"><button class="p" onclick="speak()">▶ Nghe thuyết minh</button><button onclick="stop()">■ Dừng</button><button onclick="cur=null;stop();render()">Đóng</button></div><div class="mu" id="aud"></div></div>';
+  if(!items.length)h+='<p class="mu">Không tìm thấy nội dung phù hợp.</p>';
+  items.forEach(function(i){h+='<div class="c it" onclick="open1('+i.id+')"><b>'+esc(i.title)+'</b> '+(i.fallback?'<span class="b">dùng bản tiếng Việt</span>':'')+'<div class="mu">'+esc(i.summary)+'…</div></div>'});return h}
+function search(v){q=v;clearTimeout(tmr);tmr=setTimeout(async function(){try{await loadList();render()}catch(e){fail(e)}},250)}
+async function chLang(v){lang=v;stop();try{await loadList();if(cur)cur=await api('content/contents/'+cur.id+'?lang='+lang);render()}catch(e){fail(e)}}
+async function open1(id){stop();try{cur=await api('content/contents/'+id+'?lang='+lang);err='';render();scrollTo(0,0)}catch(e){fail(e)}}
+async function speak(){try{var a=await api('content/contents/'+cur.id+'/audio?lang='+lang);if(!window.speechSynthesis){$('aud').textContent='Trình duyệt không hỗ trợ âm thanh.';return}
+  speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(a.text);u.lang=a.tts;speechSynthesis.speak(u);$('aud').textContent='Đang phát ('+a.tts+')...'}catch(e){fail(e)}}
+function stop(){try{speechSynthesis.cancel()}catch(e){}}
+/* Quản trị */
+async function goAdmin(){view='admin';try{adm=await api('content/admin/contents');users=await api('auth/users');render()}catch(e){fail(e)}}
+function admV(){var h='<div class="t">';[['content','Nội dung'],['lang','Ngôn ngữ'],['users','Người dùng']].forEach(function(s){h+='<button class="'+(sub===s[0]?'on':'')+'" onclick="sub=\''+s[0]+'\';edit=null;render()">'+s[1]+'</button>'});h+='</div>';
+  if(sub==='content'){if(edit){h+='<div class="c"><h2>'+(edit.id?'Sửa':'Thêm')+' nội dung</h2>';langs.forEach(function(l){var x=edit.tr[l.code]||{title:'',body:''};h+='<div style="margin-bottom:10px"><b>'+esc(l.name)+'</b><input id="t_'+l.code+'" placeholder="Tiêu đề" value="'+esc(x.title)+'" style="margin:4px 0"><textarea id="b_'+l.code+'" placeholder="Nội dung">'+esc(x.body)+'</textarea></div>'});
+      return h+'<div class="r"><button class="p" onclick="saveC()">Lưu</button><button onclick="edit=null;render()">Hủy</button></div></div>'}
+    h+='<div class="c"><button class="p" onclick="edit={id:0,tr:{}};render()">+ Thêm nội dung</button></div>';
+    adm.forEach(function(c){h+='<div class="c r"><div><b>'+esc((c.tr.vi||{}).title)+'</b><div class="mu">'+Object.keys(c.tr).join(', ')+'</div></div><button onclick="editC('+c.id+')">Sửa</button><button class="d" onclick="delC('+c.id+')">Xóa</button></div>'});return h}
+  if(sub==='lang'){h+='<div class="c"><div class="r"><input id="lc" placeholder="Mã (vd: fr)"><input id="ln" placeholder="Tên"><input id="lt" placeholder="Giọng đọc (fr-FR)"><button class="p" onclick="addL()">Thêm</button></div></div><div class="c"><table><tr><th>Mã</th><th>Tên</th><th>Giọng</th><th></th></tr>';
+    langs.forEach(function(l){h+='<tr><td>'+esc(l.code)+'</td><td>'+esc(l.name)+'</td><td>'+esc(l.tts)+'</td><td>'+(l.code==='vi'?'<span class="mu">gốc</span>':'<button class="d" onclick="delL(\''+l.code+'\')">Xóa</button>')+'</td></tr>'});return h+'</table></div>'}
+  h+='<div class="c"><table><tr><th>Tài khoản</th><th>Vai trò</th><th>Trạng thái</th><th></th></tr>';
+  users.forEach(function(u){var s=u.username===me.username;h+='<tr><td>'+esc(u.username)+'</td><td>'+u.role+'</td><td>'+(u.locked?'Đã khóa':'Hoạt động')+'</td><td>'+(s?'<span class="mu">bạn</span>':'<button onclick="lockU(\''+esc(u.username)+'\','+!u.locked+')">'+(u.locked?'Mở khóa':'Khóa')+'</button> <button class="d" onclick="delU(\''+esc(u.username)+'\')">Xóa</button>')+'</td></tr>'});return h+'</table></div>'}
+async function act(fn){try{err='';await fn();await refresh()}catch(e){err=e.message}render()}
+async function refresh(){langs=await api('content/languages');adm=await api('content/admin/contents');users=await api('auth/users');await loadList()}
+function editC(id){edit=JSON.parse(JSON.stringify(adm.filter(function(c){return c.id===id})[0]));render()}
+function delC(id){if(confirm('Xóa nội dung này?'))act(function(){return api('content/contents/'+id,{method:'DELETE'})})}
+function saveC(){var tr={};langs.forEach(function(l){tr[l.code]={title:$('t_'+l.code).value,body:$('b_'+l.code).value}});
+  act(async function(){await api('content/contents'+(edit.id?'/'+edit.id:''),{method:edit.id?'PUT':'POST',body:{tr:tr}});edit=null})}
+function addL(){act(function(){return api('content/languages',{method:'POST',body:{code:$('lc').value,name:$('ln').value,tts:$('lt').value}})})}
+function delL(c){if(confirm('Xóa ngôn ngữ và các bản dịch của nó?'))act(function(){if(lang===c)lang='vi';return api('content/languages/'+c,{method:'DELETE'})})}
+function lockU(u,l){act(function(){return api('auth/users/'+encodeURIComponent(u),{method:'PATCH',body:{locked:l}})})}
+function delU(u){if(confirm('Xóa tài khoản này?'))act(function(){return api('auth/users/'+encodeURIComponent(u),{method:'DELETE'})})}
+boot();
+</script></body></html>
