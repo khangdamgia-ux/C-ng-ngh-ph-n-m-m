@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thuyết minh Sài Gòn</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+<header class="top"><div class="w"><h1>🎧 Thuyết minh Sài Gòn</h1><span class="sp"></span><span class="b" id="who"></span><button onclick="logout()">Đăng xuất</button></div></header>
+<div class="w" id="app"><p class="mu">Đang tải…</p></div>
+<div id="ov"></div>
+<script src="/common.js"></script>
+<script>
+var me, langs = [], items = [], adm = [], users = [], view = 'list', sub = 'content', lang = 'vi', q = '', cat = '', sort = 'default',
+    onlyFav = false, pos = null, cur = null, edit = null, err = '', tmr, rate = 1, esc = TM.esc, api = TM.api;
+var CATS = [['', 'Tất cả'], ['history', '🏛️ Lịch sử'], ['religion', '⛪ Tôn giáo'], ['culture', '🎨 Văn hóa'], ['food', '🍜 Ẩm thực'], ['nature', '🌳 Thiên nhiên']];
+var CAT_NAME = {}; CATS.forEach(function (c) { CAT_NAME[c[0]] = c[1]; });
+var $ = function (i) { return document.getElementById(i); };
+
+/* Yêu thích lưu theo từng tài khoản trong trình duyệt */
+function favKey() { return 'tm_fav_' + me.username; }
+function favs() { try { return JSON.parse(localStorage.getItem(favKey()) || '[]'); } catch (e) { return []; } }
+function isFav(id) { return favs().indexOf(id) >= 0; }
+function toggleFav(id, ev) {
+  if (ev) ev.stopPropagation();
+  var f = favs(), i = f.indexOf(id); i >= 0 ? f.splice(i, 1) : f.push(id);
+  try { localStorage.setItem(favKey(), JSON.stringify(f)); } catch (e) {}
+  toast(i >= 0 ? 'Đã bỏ khỏi yêu thích' : 'Đã thêm vào yêu thích'); render(); if (cur) showDetail();
+}
+function toast(m) { var t = document.createElement('div'); t.className = 'toast'; t.textContent = m; document.body.appendChild(t); setTimeout(function () { t.remove(); }, 1600); }
+
+function dist(a, b, c, d) { var R = 6371, r = Math.PI / 180, x = (c - a) * r, y = (d - b) * r;
+  var h = Math.sin(x / 2) * Math.sin(x / 2) + Math.cos(a * r) * Math.cos(c * r) * Math.sin(y / 2) * Math.sin(y / 2); return 2 * R * Math.asin(Math.sqrt(h)); }
+function km(it) { return pos && it.lat != null ? dist(pos.lat, pos.lng, it.lat, it.lng) : null; }
+function kmText(it) { var d = km(it); return d == null ? '' : d < 1 ? Math.round(d * 1000) + ' m' : d.toFixed(1) + ' km'; }
+
+async function boot() {
+  me = await TM.me(); if (!me) return location.replace('/login');
+  $('who').textContent = me.username + ' · ' + me.role;
+  try { langs = await api('content/languages'); await loadList(); } catch (e) { err = e.message; }
+  render();
+}
+async function loadList() { items = await api('content/contents?lang=' + lang + '&q=' + encodeURIComponent(q) + '&category=' + cat); }
+function logout() { TM.tok = null; stop(); location.replace('/login'); }
+function fail(e) { if (e.status === 401) return logout(); err = e.message; render(); }
+
+function render() {
+  var h = '<div class="tabs"><button class="' + (view === 'list' ? 'on' : '') + '" onclick="view=\'list\';render()">Địa điểm</button>' +
+    (me.role === 'admin' ? '<button class="' + (view === 'admin' ? 'on' : '') + '" onclick="goAdmin()">Quản trị</button>' : '') + '</div>' +
+    '<div class="er">' + esc(err) + '</div>' + (view === 'list' ? listV() : admV());
+  var k = document.activeElement && document.activeElement.id;
+  $('app').innerHTML = h;
+  if (k === 'q') { var qi = $('q'); qi.focus(); qi.setSelectionRange(q.length, q.length); }
+}
+
+function listV() {
+  var h = '<div class="card" style="margin-bottom:12px"><div class="r"><input id="q" placeholder="🔍 Tìm theo tên, nội dung, địa chỉ…" value="' + esc(q) + '" oninput="search(this.value)">' +
+    '<select onchange="chLang(this.value)" title="Ngôn ngữ">';
+  langs.forEach(function (l) { h += '<option value="' + l.code + '"' + (l.code === lang ? ' selected' : '') + '>🌐 ' + esc(l.name) + '</option>'; });
+  h += '</select><select onchange="chSort(this.value)" title="Sắp xếp"><option value="default">Sắp xếp: Mặc định</option><option value="near"' + (sort === 'near' ? ' selected' : '') + '>Gần tôi nhất</option><option value="year"' + (sort === 'year' ? ' selected' : '') + '>Năm xây dựng</option></select></div>' +
+    '<div class="chips" style="margin-top:10px">';
+  CATS.forEach(function (c) { h += '<button class="chip' + (cat === c[0] ? ' on' : '') + '" onclick="chCat(\'' + c[0] + '\')">' + c[1] + '</button>'; });
+  h += '<button class="chip' + (onlyFav ? ' on' : '') + '" onclick="onlyFav=!onlyFav;render()">❤ Yêu thích (' + favs().length + ')</button></div></div>';
+  var list = items.filter(function (i) { return !onlyFav || isFav(i.id); });
+  if (sort === 'near') list.sort(function (a, b) { return (km(a) == null ? 1e9 : km(a)) - (km(b) == null ? 1e9 : km(b)); });
+  if (sort === 'year') list.sort(function (a, b) { return (+a.year || 9999) - (+b.year || 9999); });
+  h += '<p class="mu">' + list.length + ' địa điểm</p>';
+  if (!list.length) return h + '<div class="card mu">Không tìm thấy nội dung phù hợp.</div>';
+  h += '<div class="grid">';
+  list.forEach(function (i) {
+    var d = kmText(i);
+    h += '<div class="card place" onclick="open1(' + i.id + ')"><div class="cover k-' + (i.category || 'x') + '">' + esc(i.emoji || '📍') + '</div>' +
+      '<button class="fav' + (isFav(i.id) ? ' on' : '') + '" onclick="toggleFav(' + i.id + ',event)" title="Yêu thích">' + (isFav(i.id) ? '♥' : '♡') + '</button>' +
+      '<div class="in"><div class="t">' + esc(i.title) + '</div><div class="mu">' + esc(CAT_NAME[i.category] || '') + (i.year ? ' · ' + esc(i.year) : '') + (d ? ' · 📍 ' + d : '') + '</div>' +
+      '<div class="sm">' + esc(i.summary) + '…</div>' + (i.fallback ? '<span class="b" style="justify-self:start">dùng bản tiếng Việt</span>' : '') + '</div></div>';
+  });
+  return h + '</div>';
+}
+function search(v) { q = v; clearTimeout(tmr); tmr = setTimeout(async function () { try { await loadList(); render(); } catch (e) { fail(e); } }, 250); }
+async function chCat(c) { cat = c; try { await loadList(); render(); } catch (e) { fail(e); } }
+async function chLang(v) { lang = v; stop(); try { await loadList(); if (cur) cur = await api('content/contents/' + cur.id + '?lang=' + lang); render(); if (cur) showDetail(); } catch (e) { fail(e); } }
+function chSort(v) {
+  sort = v;
+  if (v === 'near' && !pos) {
+    if (!navigator.geolocation) { toast('Trình duyệt không hỗ trợ định vị'); sort = 'default'; return render(); }
+    navigator.geolocation.getCurrentPosition(function (p) { pos = { lat: p.coords.latitude, lng: p.coords.longitude }; render(); },
+      function () { toast('Không lấy được vị trí của bạn'); sort = 'default'; render(); });
+  } else render();
+}
+
+/* Chi tiết địa điểm */
+async function open1(id) { stop(); try { cur = await api('content/contents/' + id + '?lang=' + lang); err = ''; showDetail(); } catch (e) { fail(e); } }
+function showDetail() {
+  var c = cur, d = kmText(c), idx = items.findIndex(function (i) { return i.id === c.id; });
+  var h = '<div class="ov" onclick="if(event.target===this)closeD()"><div class="dt"><div class="cover k-' + (c.category || 'x') + '">' + esc(c.emoji || '📍') +
+    '<button class="x" onclick="closeD()" title="Đóng">✕</button></div><div class="body">' +
+    '<div class="row"><div><h2>' + esc(c.title) + '</h2><div class="mu">' + esc(CAT_NAME[c.category] || '') + ' · <span class="b">' + esc(c.lang) + '</span></div></div>' +
+    '<button onclick="toggleFav(' + c.id + ')">' + (isFav(c.id) ? '♥ Đã lưu' : '♡ Lưu') + '</button></div>' +
+    (c.fallback ? '<div class="mu">Chưa có bản dịch ở ngôn ngữ này, đang hiển thị tiếng Việt.</div>' : '') +
+    '<div class="pl"><button class="p" id="pb" onclick="speak()">▶ Nghe thuyết minh</button><button onclick="stop()">■ Dừng</button>' +
+    '<select id="rt" style="width:auto" onchange="rate=+this.value" title="Tốc độ"><option value="0.8"' + (rate === .8 ? ' selected' : '') + '>0.8×</option><option value="1"' + (rate === 1 ? ' selected' : '') + '>1×</option><option value="1.25"' + (rate === 1.25 ? ' selected' : '') + '>1.25×</option><option value="1.5"' + (rate === 1.5 ? ' selected' : '') + '>1.5×</option></select>' +
+    '<span class="bar"><i id="pg"></i></span><span class="mu" id="aud"></span></div>' +
+    '<div class="txt">' + esc(c.body) + '</div>';
+  var f = '';
+  if (c.address) f += '<div><b>Địa chỉ</b>' + esc(c.address) + '</div>';
+  if (c.hours) f += '<div><b>Giờ mở cửa (tham khảo)</b>' + esc(c.hours) + '</div>';
+  if (c.year) f += '<div><b>Năm</b>' + esc(c.year) + '</div>';
+  if (d) f += '<div><b>Cách bạn</b>' + d + '</div>';
+  if (f) h += '<div class="facts">' + f + '</div>';
+  if (c.lat != null && c.lng != null) {
+    var bb = [c.lng - .006, c.lat - .004, c.lng + .006, c.lat + .004].join('%2C');
+    h += '<iframe class="map" loading="lazy" title="Bản đồ" src="https://www.openstreetmap.org/export/embed.html?bbox=' + bb + '&layer=mapnik&marker=' + c.lat + '%2C' + c.lng + '"></iframe>' +
+      '<div class="r"><a href="https://www.google.com/maps/dir/?api=1&destination=' + c.lat + ',' + c.lng + '" target="_blank" rel="noopener"><button class="p" style="width:100%">🧭 Chỉ đường</button></a>' +
+      '<a href="https://www.google.com/maps/search/?api=1&query=' + c.lat + ',' + c.lng + '" target="_blank" rel="noopener" style="display:block;text-align:center;width:100%;box-sizing:border-box;padding:9px 12px;border:1px solid var(--bd);border-radius:10px;background:var(--card);color:var(--tx);text-decoration:none">Mở bản đồ lớn</a></div>';
+  }
+  h += '<div class="r"><button ' + (idx <= 0 ? 'disabled' : 'onclick="open1(' + (items[idx - 1] || {}).id + ')"') + '>← Trước</button><button ' + (idx < 0 || idx >= items.length - 1 ? 'disabled' : 'onclick="open1(' + (items[idx + 1] || {}).id + ')"') + '>Tiếp →</button></div>';
+  $('ov').innerHTML = h + '</div></div></div>'; document.body.style.overflow = 'hidden';
+}
+function closeD() { stop(); cur = null; $('ov').innerHTML = ''; document.body.style.overflow = ''; }
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && cur) closeD(); });
+
+async function speak() {
+  try {
+    var a = await api('content/contents/' + cur.id + '/audio?lang=' + lang);
+    if (!window.speechSynthesis) { $('aud').textContent = 'Trình duyệt không hỗ trợ âm thanh.'; return; }
+    speechSynthesis.cancel();
+    var u = new SpeechSynthesisUtterance(a.text); u.lang = a.tts; u.rate = rate;
+    var hasVoice = speechSynthesis.getVoices().some(function (v) { return v.lang.toLowerCase().indexOf(a.tts.slice(0, 2).toLowerCase()) === 0; });
+    u.onboundary = function (e) { var p = $('pg'); if (p) p.style.width = Math.min(100, Math.round(e.charIndex / a.text.length * 100)) + '%'; };
+    u.onend = function () { var p = $('pg'); if (p) p.style.width = '100%'; if ($('aud')) $('aud').textContent = 'Đã đọc xong'; };
+    speechSynthesis.speak(u); $('aud').textContent = hasVoice || !speechSynthesis.getVoices().length ? 'Đang phát (' + a.tts + ')' : 'Máy chưa có giọng đọc ' + a.tts;
+  } catch (e) { fail(e); }
+}
+function stop() { try { speechSynthesis.cancel(); } catch (e) {} var p = $('pg'); if (p) p.style.width = '0'; if ($('aud')) $('aud').textContent = ''; }
+
+/* Quản trị */
+async function goAdmin() { view = 'admin'; try { adm = await api('content/admin/contents'); users = await api('auth/users'); render(); } catch (e) { fail(e); } }
+function admV() {
+  var h = '<div class="tabs">'; [['content', 'Nội dung'], ['lang', 'Ngôn ngữ'], ['users', 'Người dùng']].forEach(function (s) { h += '<button class="' + (sub === s[0] ? 'on' : '') + '" onclick="sub=\'' + s[0] + '\';edit=null;render()">' + s[1] + '</button>'; }); h += '</div>';
+  if (sub === 'content') {
+    if (edit) {
+      var m = edit.meta || {}, F = function (k, label, ph) { return '<label class="mu">' + label + '<input id="m_' + k + '" value="' + esc(m[k] == null ? '' : m[k]) + '" placeholder="' + (ph || '') + '"></label>'; };
+      h += '<div class="card"><h2>' + (edit.id ? 'Sửa' : 'Thêm') + ' địa điểm</h2><div class="r" style="margin:10px 0"><label class="mu">Loại<select id="m_category">' +
+        CATS.slice(1).map(function (c) { return '<option value="' + c[0] + '"' + (m.category === c[0] ? ' selected' : '') + '>' + c[1] + '</option>'; }).join('') + '</select></label>' +
+        F('emoji', 'Biểu tượng', '📍') + F('year', 'Năm', '1914') + '</div><div class="r">' + F('address', 'Địa chỉ') + F('hours', 'Giờ mở cửa') + '</div><div class="r" style="margin:6px 0 14px">' + F('lat', 'Vĩ độ (lat)', '10.7725') + F('lng', 'Kinh độ (lng)', '106.698') + '</div>';
+      langs.forEach(function (l) { var x = edit.tr[l.code] || { title: '', body: '' }; h += '<div style="margin-bottom:10px"><b>' + esc(l.name) + '</b><input id="t_' + l.code + '" placeholder="Tiêu đề" value="' + esc(x.title) + '" style="margin:4px 0"><textarea id="b_' + l.code + '" placeholder="Nội dung">' + esc(x.body) + '</textarea></div>'; });
+      return h + '<div class="r"><button class="p" onclick="saveC()">Lưu</button><button onclick="edit=null;render()">Hủy</button></div></div>';
+    }
+    h += '<div class="card" style="margin-bottom:10px"><button class="p" onclick="edit={id:0,tr:{},meta:{category:\'culture\'}};render()">+ Thêm địa điểm</button></div>';
+    adm.forEach(function (c) { h += '<div class="card row" style="margin-bottom:8px"><div><b>' + esc((c.meta || {}).emoji || '📍') + ' ' + esc((c.tr.vi || {}).title) + '</b><div class="mu">' + Object.keys(c.tr).join(', ') + '</div></div><button onclick="editC(' + c.id + ')">Sửa</button><button class="d" onclick="delC(' + c.id + ')">Xóa</button></div>'; });
+    return h;
+  }
+  if (sub === 'lang') {
+    h += '<div class="card" style="margin-bottom:10px"><div class="r"><input id="lc" placeholder="Mã (vd: fr)"><input id="ln" placeholder="Tên"><input id="lt" placeholder="Giọng đọc (fr-FR)"><button class="p" onclick="addL()">Thêm</button></div></div><div class="card"><table><tr><th>Mã</th><th>Tên</th><th>Giọng</th><th></th></tr>';
+    langs.forEach(function (l) { h += '<tr><td>' + esc(l.code) + '</td><td>' + esc(l.name) + '</td><td>' + esc(l.tts) + '</td><td>' + (l.code === 'vi' ? '<span class="mu">gốc</span>' : '<button class="d" onclick="delL(\'' + l.code + '\')">Xóa</button>') + '</td></tr>'; });
+    return h + '</table></div>';
+  }
+  h += '<div class="card"><table><tr><th>Tài khoản</th><th>Vai trò</th><th>Trạng thái</th><th></th></tr>';
+  users.forEach(function (u) { var s = u.username === me.username; h += '<tr><td>' + esc(u.username) + '</td><td>' + u.role + '</td><td>' + (u.locked ? 'Đã khóa' : 'Hoạt động') + '</td><td>' + (s ? '<span class="mu">bạn</span>' : '<button onclick="lockU(\'' + esc(u.username) + '\',' + !u.locked + ')">' + (u.locked ? 'Mở khóa' : 'Khóa') + '</button> <button class="d" onclick="delU(\'' + esc(u.username) + '\')">Xóa</button>') + '</td></tr>'; });
+  return h + '</table></div>';
+}
+async function act(fn) { try { err = ''; await fn(); langs = await api('content/languages'); adm = await api('content/admin/contents'); users = await api('auth/users'); await loadList(); } catch (e) { if (e.status === 401) return logout(); err = e.message; } render(); }
+function editC(id) { edit = JSON.parse(JSON.stringify(adm.filter(function (c) { return c.id === id; })[0])); render(); }
+function delC(id) { if (confirm('Xóa nội dung này?')) act(function () { return api('content/contents/' + id, { method: 'DELETE' }); }); }
+function saveC() {
+  var tr = {}, meta = {}; langs.forEach(function (l) { tr[l.code] = { title: $('t_' + l.code).value, body: $('b_' + l.code).value }; });
+  ['category', 'emoji', 'year', 'address', 'hours', 'lat', 'lng'].forEach(function (k) { meta[k] = $('m_' + k).value; });
+  act(async function () { await api('content/contents' + (edit.id ? '/' + edit.id : ''), { method: edit.id ? 'PUT' : 'POST', body: { tr: tr, meta: meta } }); edit = null; });
+}
+function addL() { act(function () { return api('content/languages', { method: 'POST', body: { code: $('lc').value, name: $('ln').value, tts: $('lt').value } }); }); }
+function delL(c) { if (confirm('Xóa ngôn ngữ và các bản dịch của nó?')) act(function () { if (lang === c) lang = 'vi'; return api('content/languages/' + c, { method: 'DELETE' }); }); }
+function lockU(u, l) { act(function () { return api('auth/users/' + encodeURIComponent(u), { method: 'PATCH', body: { locked: l } }); }); }
+function delU(u) { if (confirm('Xóa tài khoản này?')) act(function () { return api('auth/users/' + encodeURIComponent(u), { method: 'DELETE' }); }); }
+boot();
+</script></body></html>

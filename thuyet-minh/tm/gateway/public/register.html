@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Đăng ký · Thuyết minh Sài Gòn</title><link rel="stylesheet" href="/style.css"></head>
+<body><main class="auth"><div class="card">
+  <div class="brand">🗺️</div><h1>Tạo tài khoản</h1>
+  <p class="mu" style="margin:0">Miễn phí, chỉ mất vài giây.</p>
+  <form id="f">
+    <label>Tên đăng nhập<input id="u" name="username" autocomplete="username" required autofocus placeholder="3–30 ký tự: chữ, số, _ . -"></label>
+    <label>Mật khẩu<span class="pw"><input id="p" name="password" type="password" autocomplete="new-password" required placeholder="Tối thiểu 6 ký tự"><button type="button" onclick="TM.togglePw(this)">Hiện</button></span></label>
+    <label>Nhập lại mật khẩu<input id="p2" type="password" autocomplete="new-password" required></label>
+    <div class="er" id="er"></div>
+    <button class="p" id="go">Đăng ký</button>
+  </form>
+  <p class="sw">Đã có tài khoản? <a href="/login">Đăng nhập</a></p>
+</div></main>
+<script src="/common.js"></script>
+<script>
+(async function () {
+  if (await TM.me()) return location.replace('/');
+  document.getElementById('f').addEventListener('submit', async function (e) {
+    e.preventDefault(); var er = document.getElementById('er'), b = document.getElementById('go');
+    var u = document.getElementById('u').value.trim(), p = document.getElementById('p').value;
+    er.textContent = '';
+    if (!/^[a-zA-Z0-9_.-]{3,30}$/.test(u)) return er.textContent = 'Tên đăng nhập 3–30 ký tự (chữ, số, _ . -)';
+    if (p.length < 6) return er.textContent = 'Mật khẩu tối thiểu 6 ký tự';
+    if (p !== document.getElementById('p2').value) return er.textContent = 'Hai mật khẩu chưa khớp';
+    b.disabled = true;
+    try { await TM.api('auth/register', { method: 'POST', body: { username: u, password: p } }); location.replace('/login?registered=1&u=' + encodeURIComponent(u)); }
+    catch (x) { er.textContent = x.message; b.disabled = false; }
+  });
+})();
+</script></body></html>
