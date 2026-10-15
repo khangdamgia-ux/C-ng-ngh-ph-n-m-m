@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Đăng nhập · Thuyết minh Sài Gòn</title><link rel="stylesheet" href="/style.css"></head>
+<body><main class="auth"><div class="card">
+  <div class="brand">🎧</div><h1>Chào mừng trở lại</h1>
+  <p class="mu" style="margin:0">Đăng nhập để nghe thuyết minh các địa điểm tại TP. Hồ Chí Minh.</p>
+  <form id="f" autocomplete="on">
+    <div class="ok" id="ok"></div>
+    <label>Tên đăng nhập<input id="u" name="username" autocomplete="username" required autofocus></label>
+    <label>Mật khẩu<span class="pw"><input id="p" name="password" type="password" autocomplete="current-password" required><button type="button" onclick="TM.togglePw(this)">Hiện</button></span></label>
+    <div class="er" id="er"></div>
+    <button class="p" id="go">Đăng nhập</button>
+  </form>
+  <p class="sw">Chưa có tài khoản? <a href="/register">Đăng ký</a></p>
+</div></main>
+<script src="/common.js"></script>
+<script>
+(async function () {
+  if (await TM.me()) return location.replace('/');
+  var qs = new URLSearchParams(location.search);
+  if (qs.get('registered')) { document.getElementById('ok').textContent = 'Đăng ký thành công. Hãy đăng nhập.'; document.getElementById('u').value = qs.get('u') || ''; document.getElementById('p').focus(); }
+  document.getElementById('f').addEventListener('submit', async function (e) {
+    e.preventDefault(); var er = document.getElementById('er'), b = document.getElementById('go'); er.textContent = ''; b.disabled = true;
+    try {
+      var d = await TM.api('auth/login', { method: 'POST', body: { username: document.getElementById('u').value.trim(), password: document.getElementById('p').value } });
+      TM.tok = d.token; location.replace('/');
+    } catch (x) { er.textContent = x.message; b.disabled = false; }
+  });
+})();
+</script></body></html>
