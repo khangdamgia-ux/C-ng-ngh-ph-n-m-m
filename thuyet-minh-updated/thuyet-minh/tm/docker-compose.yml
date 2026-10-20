@@ -1,0 +1,20 @@
+services:
+  auth:
+    build: { context: ., dockerfile: services/auth/Dockerfile }
+    environment:
+      PORT: 4001
+      JWT_SECRET: ${JWT_SECRET:-doi-secret-nay}
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASS: ${ADMIN_PASS:-admin123}
+    volumes: [auth-data:/data]
+  content:
+    build: { context: ., dockerfile: services/content/Dockerfile }
+    environment: { PORT: 4002, AUTH_URL: "http://auth:4001" }
+    volumes: [content-data:/data]
+    depends_on: [auth]
+  gateway:
+    build: { context: ., dockerfile: gateway/Dockerfile }
+    environment: { PORT: 4000, AUTH_URL: "http://auth:4001", CONTENT_URL: "http://content:4002" }
+    ports: ["4000:4000"]
+    depends_on: [auth, content]
+volumes: { auth-data: {}, content-data: {} }

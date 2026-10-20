@@ -1,0 +1,134 @@
+name: CD
+
+# Chạy sau khi workflow "CI" thành công trên main/master, hoặc bấm tay (Actions > CD > Run workflow).
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main, master]
+  workflow_dispatch:
+
+# Không cho 2 lần deploy chạy chồng nhau.
+concurrency:
+  group: cd
+  cancel-in-progress: false
+
+env:
+  # Commit cần phát hành (với workflow_run là commit đã qua CI).
+  SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+jobs:
+  # ---------- 1. Build và đẩy 3 image lên GHCR ----------
+  publish:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { service: auth,    dockerfile: services/auth/Dockerfile }
+          - { service: content, dockerfile: services/content/Dockerfile }
+          - { service: gateway, dockerfile: gateway/Dockerfile }
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ env.SHA }}" }
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tự tạo tên image (chữ thường) và tag: latest + mã commit.
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/${{ matrix.service }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ env.SHA }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,scope=${{ matrix.service }},mode=max
+
+  # ---------- 2. Deploy lên máy chủ (chỉ chạy khi bật DEPLOY_ENABLED) ----------
+  deploy:
+    needs: publish
+    if: vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      packages: read
+    env:
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_PORT: ${{ secrets.SSH_PORT }}
+      SSH_KEY: ${{ secrets.SSH_KEY }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      ADMIN_USER: ${{ secrets.ADMIN_USER }}
+      ADMIN_PASS: ${{ secrets.ADMIN_PASS }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ env.SHA }}" }
+
+      - name: Kiểm tra đã đặt đủ secrets
+        run: |
+          for v in SSH_HOST SSH_USER SSH_KEY JWT_SECRET ADMIN_PASS; do
+            [ -n "${!v}" ] || { echo "::error::Thiếu secret $v"; exit 1; }
+          done
+
+      - name: Cấu hình SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -p "${SSH_PORT:-22}" "$SSH_HOST" >> ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<CONF
+          Host server
+            HostName $SSH_HOST
+            User $SSH_USER
+            Port ${SSH_PORT:-22}
+            IdentityFile ~/.ssh/id_deploy
+          CONF
+
+      - name: Gửi file cấu hình lên máy chủ
+        run: |
+          PREFIX=$(echo "ghcr.io/${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          ssh server "mkdir -p thuyet-minh"
+          scp docker-compose.prod.yml server:thuyet-minh/docker-compose.yml
+          # Ghi file .env (bí mật) trên máy chủ, chỉ chủ sở hữu đọc được.
+          ssh server "umask 077 && cat > thuyet-minh/.env" <<ENV
+          IMAGE_PREFIX=$PREFIX
+          TAG=$SHA
+          JWT_SECRET=$JWT_SECRET
+          ADMIN_USER=${ADMIN_USER:-admin}
+          ADMIN_PASS=$ADMIN_PASS
+          ENV
+
+      - name: Kéo image mới và khởi động lại
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | ssh server "docker login ghcr.io -u ${{ github.actor }} --password-stdin"
+          ssh server "cd thuyet-minh && docker compose pull && docker compose up -d --remove-orphans"
+          ssh server "docker image prune -f"
+
+      - name: Smoke test sau deploy
+        run: |
+          ssh server 'for i in $(seq 1 30); do
+            curl -sf http://localhost:4000/api/auth/health && curl -sf http://localhost:4000/api/content/health && echo && echo "OK" && exit 0
+            sleep 2
+          done
+          cd thuyet-minh && docker compose ps && docker compose logs --tail=50
+          exit 1'

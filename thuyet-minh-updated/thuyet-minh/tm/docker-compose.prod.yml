@@ -1,0 +1,41 @@
+# Bản chạy thật: dùng image dựng sẵn trên GHCR (không build tại máy chủ).
+# Cần file .env cùng thư mục với: IMAGE_PREFIX, TAG, JWT_SECRET, ADMIN_USER, ADMIN_PASS
+services:
+  auth:
+    image: ${IMAGE_PREFIX}/auth:${TAG:-latest}
+    restart: unless-stopped
+    environment:
+      PORT: 4001
+      JWT_SECRET: ${JWT_SECRET:?Bắt buộc đặt JWT_SECRET}
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASS: ${ADMIN_PASS:?Bắt buộc đặt ADMIN_PASS}
+    volumes: [auth-data:/data]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4001/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  content:
+    image: ${IMAGE_PREFIX}/content:${TAG:-latest}
+    restart: unless-stopped
+    environment: { PORT: 4002, AUTH_URL: "http://auth:4001" }
+    volumes: [content-data:/data]
+    depends_on:
+      auth: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4002/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  gateway:
+    image: ${IMAGE_PREFIX}/gateway:${TAG:-latest}
+    restart: unless-stopped
+    environment: { PORT: 4000, AUTH_URL: "http://auth:4001", CONTENT_URL: "http://content:4002" }
+    ports: ["4000:4000"]
+    depends_on:
+      auth: { condition: service_healthy }
+      content: { condition: service_healthy }
+
+volumes: { auth-data: {}, content-data: {} }
