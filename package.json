@@ -1,0 +1,44 @@
+{
+  "name": "hoian-audio-guide",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Hội An Audio Guide – hệ thống thuyết minh đa ngôn ngữ rảnh tay cho Phố cổ Hội An",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "services/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "npm run build -w packages/shared && npm run build -w services/gateway -w services/auth -w services/location -w services/content -w services/analytics -w apps/web",
+    "typecheck": "npm run build -w packages/shared && npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "test": "npm run build -w packages/shared && npm run test --workspaces --if-present",
+    "test:integration": "npm run build -w packages/shared && vitest run --config tests/integration/vitest.config.ts",
+    "db:migrate": "node scripts/db-migrate.mjs",
+    "db:seed": "node scripts/generate-seed.mjs && node scripts/db-migrate.mjs --seed",
+    "dev": "npm run build -w packages/shared && node scripts/dev.mjs",
+    "test:e2e": "node tests/e2e/handsfree.mjs",
+    "tiles:offline": "node scripts/tiles-offline.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@types/node": "^22.10.2",
+    "eslint": "^9.17.0",
+    "globals": "^15.14.0",
+    "supertest": "^7.0.0",
+    "@types/supertest": "^6.0.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.1",
+    "vitest": "^2.1.8",
+    "playwright": "^1.49.1"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "mssql": "^11.0.1"
+  }
+}

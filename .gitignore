@@ -1,3 +1,8 @@
 node_modules/
+dist/
+dev-dist/
 .env
+media/
+coverage/
 *.log
+db/seed/V100__seed_hoian.sql

@@ -1,0 +1,90 @@
+# Chạy toàn bộ hệ thống: cp .env.example .env (điền mật khẩu) → docker compose up -d --build → docker compose run --rm migrate
+x-service: &service
+  env_file: .env
+  restart: unless-stopped
+  environment: &svc-env
+    DB_HOST: sqlserver
+    AUTH_SERVICE_URL: http://auth:4001
+    LOCATION_SERVICE_URL: http://location:4002
+    CONTENT_SERVICE_URL: http://content:4003
+    ANALYTICS_SERVICE_URL: http://analytics:4004
+  depends_on:
+    sqlserver: { condition: service_healthy }
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${DB_PASSWORD}
+    volumes: ["mssql-data:/var/opt/mssql"]
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  migrate:
+    image: ${IMAGE_PREFIX:-hoian}/migrate:${IMAGE_TAG:-latest}
+    build: { context: ., dockerfile: docker/migrate.Dockerfile }
+    env_file: .env
+    environment: { DB_HOST: sqlserver }
+    depends_on: { sqlserver: { condition: service_healthy } }
+    profiles: ["tools"]
+
+  auth:
+    <<: *service
+    image: ${IMAGE_PREFIX:-hoian}/auth:${IMAGE_TAG:-latest}
+    build: { context: ., dockerfile: docker/service.Dockerfile, args: { SERVICE: auth } }
+    environment: { <<: *svc-env, PORT: "4001" }
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:4001/health"], interval: 15s, retries: 5 }
+
+  location:
+    <<: *service
+    image: ${IMAGE_PREFIX:-hoian}/location:${IMAGE_TAG:-latest}
+    build: { context: ., dockerfile: docker/service.Dockerfile, args: { SERVICE: location } }
+    environment: { <<: *svc-env, PORT: "4002" }
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:4002/health"], interval: 15s, retries: 5 }
+
+  content:
+    <<: *service
+    image: ${IMAGE_PREFIX:-hoian}/content:${IMAGE_TAG:-latest}
+    build: { context: ., dockerfile: docker/service.Dockerfile, args: { SERVICE: content } }
+    environment: { <<: *svc-env, PORT: "4003", MEDIA_DIR: /data/media }
+    volumes: ["media:/data/media"]
+    user: root
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:4003/health"], interval: 15s, retries: 5 }
+
+  analytics:
+    <<: *service
+    image: ${IMAGE_PREFIX:-hoian}/analytics:${IMAGE_TAG:-latest}
+    build: { context: ., dockerfile: docker/service.Dockerfile, args: { SERVICE: analytics } }
+    environment: { <<: *svc-env, PORT: "4004" }
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:4004/health"], interval: 15s, retries: 5 }
+
+  gateway:
+    <<: *service
+    image: ${IMAGE_PREFIX:-hoian}/gateway:${IMAGE_TAG:-latest}
+    build: { context: ., dockerfile: docker/service.Dockerfile, args: { SERVICE: gateway } }
+    environment: { <<: *svc-env, GATEWAY_PORT: "8080" }
+    depends_on:
+      auth: { condition: service_healthy }
+      location: { condition: service_healthy }
+      content: { condition: service_healthy }
+      analytics: { condition: service_healthy }
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"], interval: 15s, retries: 5 }
+    ports: ["8080:8080"]
+
+  web:
+    dns: [8.8.8.8, 1.1.1.1]   # không phụ thuộc DNS của máy chủ khi tải ảnh bản đồ
+    image: ${IMAGE_PREFIX:-hoian}/web:${IMAGE_TAG:-latest}
+    build: { context: ., dockerfile: docker/web.Dockerfile }
+    depends_on:
+      gateway: { condition: service_healthy }
+    ports: ["80:80"]
+    restart: unless-stopped
+
+volumes:
+  mssql-data:
+  media:
