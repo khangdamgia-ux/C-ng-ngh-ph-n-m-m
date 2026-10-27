@@ -142,3 +142,11 @@ Sau khi chạy `start.bat` (Docker) mở `http://localhost/api/docs`, hoặc b�
 ## Nạp đủ 6 ngôn ngữ vào database đang chạy
 
 Chạy `nap-ngon-ngu.bat` (cần Docker Desktop đang chạy). Script chỉ **thêm cái còn thiếu** (ngôn ngữ, địa điểm, bản thuyết minh vi/en/fr/ko/zh/ja), không ghi đè nội dung đã sửa trong admin.
+
+## 👥 Nhóm Thực Hiện: 09
+
+| Nguyễn Đạt Mạnh | 3124411162 |
+| Đàm Gia Khang   | 3124411121 |
+| Phạm Quốc Trung | 3124411329 |
+
+---
